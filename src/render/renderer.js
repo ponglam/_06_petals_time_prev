@@ -1,0 +1,34 @@
+(function(P){
+'use strict';
+class Renderer{
+constructor(canvas,{width=900,height=1200}={}){this.canvas=canvas;const gl=this.gl=canvas.getContext('webgl2',{alpha:false,antialias:false,preserveDrawingBuffer:true});if(!gl)throw Error('This artwork needs a browser with WebGL2 enabled.');this.programs=[];this.targets=[];this.petal=this.program(P.shaders.petalVert,P.shaders.petalFrag);this.accumulate=this.program(P.shaders.quad,P.shaders.accumulate);this.composite=this.program(P.shaders.quad,P.shaders.composite);this.vao=gl.createVertexArray();gl.bindVertexArray(this.vao);this.resize(width,height);}
+// Compile and validate every shader before allocating image buffers.
+program(vs,fs){const g=this.gl,p=g.createProgram();for(const [type,source]of[[g.VERTEX_SHADER,vs],[g.FRAGMENT_SHADER,fs]]){const s=g.createShader(type);g.shaderSource(s,source);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw Error(g.getShaderInfoLog(s));g.attachShader(p,s);g.deleteShader(s);}g.linkProgram(p);if(!g.getProgramParameter(p,g.LINK_STATUS))throw Error(g.getProgramInfoLog(p));this.programs.push(p);return p;}
+u(p,name,...v){const g=this.gl,l=g.getUniformLocation(p,name);v.length===3?g.uniform3f(l,...v):v.length===2?g.uniform2f(l,...v):g.uniform1f(l,v[0]);}
+texture(p,name,t,unit){const g=this.gl;g.activeTexture(g.TEXTURE0+unit);g.bindTexture(g.TEXTURE_2D,t);g.uniform1i(g.getUniformLocation(p,name),unit);}
+resize(w,h){if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1||Math.abs(w/h-.75)>.001)throw Error('Use a 3:4 portrait resolution.');const g=this.gl;if(Math.max(w,h)>g.getParameter(g.MAX_TEXTURE_SIZE))throw Error('Resolution exceeds this GPU limit.');for(const t of this.targets){g.deleteTexture(t.texture);g.deleteFramebuffer(t.fbo);}this.canvas.width=w;this.canvas.height=h;this.targets=Array.from({length:3},()=>{const texture=g.createTexture();g.bindTexture(g.TEXTURE_2D,texture);g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,w,h,0,g.RGBA,g.UNSIGNED_BYTE,null);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);const fbo=g.createFramebuffer();g.bindFramebuffer(g.FRAMEBUFFER,fbo);g.framebufferTexture2D(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.TEXTURE_2D,texture,0);if(g.checkFramebufferStatus(g.FRAMEBUFFER)!==g.FRAMEBUFFER_COMPLETE)throw Error('Could not allocate render target.');return{texture,fbo};});}
+clear(t){const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,t.fbo);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);}
+// Genome descriptors remain fixed; only analytic age functions change geometry.
+organism(genome,age,ghost,seed,targetAge){const g=this.gl,p=this.petal,s=P.state(genome,age);g.useProgram(p);this.u(p,'age',s.t);const colors=P.colorState(seed,age);colors.pigments.forEach((c,i)=>this.u(p,'pigment'+i,...c));this.u(p,'ghost',ghost);this.u(p,'spectral',genome.spectral);for(const [j,f]of genome.flowers.entries()){
+const emergence=.82+.18*Math.sin(s.t*3.14159);const travel=P.motion(f.phase,age);const root=[f.x+travel.x,f.y+travel.y];
+const stemBase=f.x*.3,dx=root[0]-stemBase,dy=root[1]+1.1;this.u(p,'root',stemBase,-1.1);this.u(p,'scale',.018,Math.hypot(dx,dy));this.u(p,'angle',Math.atan2(-dx,dy));this.u(p,'stem',1);this.u(p,'phase',f.phase);this.u(p,'weight',.8*emergence);g.drawArrays(g.TRIANGLES,0,3);
+this.u(p,'stem',0);for(const [i,a]of f.petals.entries()){
+const d=P.daily(a.phase+f.phase*.3,age),life=P.life(age,a.phase),petalTravel=P.motion(a.phase+f.phase,age);
+const stroke=P.strokeConfig(seed,j,i,age),presentStroke=P.strokeConfig(seed,j,i,targetAge);this.u(p,'fillRetention',P.strokeFill(targetAge,Math.max(stroke.strength,presentStroke.strength)));this.u(p,'strokeEnabled',stroke.strength);this.u(p,'strokeCycles',stroke.cycles);this.u(p,'strokePhase',stroke.phase);this.u(p,'strokeWidth',stroke.width);
+this.u(p,'roundness',life.roundness);
+const opening=s.opening+d.spread;
+const angle=a.angle+Math.sin(Math.log1p(age)*.6+a.phase)*.14+d.arc+travel.rotation+petalTravel.rotation*.25;
+this.u(p,'edgeWave',d.edge);this.u(p,'edgePhase',d.edgePhase);
+this.u(p,'contour',d.contour);this.u(p,'fold',d.fold+life.fold*Math.sin(a.phase));this.u(p,'tip',d.tip);
+this.u(p,'root',root[0]+petalTravel.x*.32,root[1]+petalTravel.y*.32);this.u(p,'scale',a.width*f.size*petalTravel.scale*life.width*(.7+.3*opening),a.length*f.size*petalTravel.scale*life.length);this.u(p,'angle',angle);this.u(p,'curl',a.curl+Math.sin(s.t*4+a.phase)*.16+d.curl+life.curl);this.u(p,'phase',a.phase);this.u(p,'tint',a.tint);this.u(p,'weight',(.44+.13*Math.sin(i))*emergence*life.opacity);g.drawArrays(g.TRIANGLES,0,3);
+}}
+}
+// Rebuild all history from zero, never from the previous interactive frame.
+render(options){const id=P.identity(options),g=this.gl,genome=P.genome(id.seed);g.bindVertexArray(this.vao);g.viewport(0,0,this.canvas.width,this.canvas.height);for(const t of this.targets)this.clear(t);let read=this.targets[0],write=this.targets[1],layer=this.targets[2];const samples=P.history(id.ageDays),s=P.state(genome,id.ageDays);
+for(let i=0;i<samples.length;i++){this.clear(layer);g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE);this.organism(genome,samples[i],1-i/(samples.length-1),id.seed,id.ageDays);g.disable(g.BLEND);g.bindFramebuffer(g.FRAMEBUFFER,write.fbo);const p=this.accumulate;g.useProgram(p);this.texture(p,'previous',read.texture,0);this.texture(p,'layer',layer.texture,1);this.u(p,'pixel',1/this.canvas.width,1/this.canvas.height);this.u(p,'amount',i===samples.length-1?.82:s.memory*.27);g.drawArrays(g.TRIANGLES,0,3);[read,write]=[write,read];}
+g.bindFramebuffer(g.FRAMEBUFFER,null);g.useProgram(this.composite);this.texture(this.composite,'image',read.texture,0);this.u(this.composite,'pixel',1/this.canvas.width,1/this.canvas.height);this.u(this.composite,'age',s.t);this.u(this.composite,'phase',genome.phase);const bg=P.colorState(id.seed,id.ageDays).background;this.u(this.composite,'ground',...bg.color);g.drawArrays(g.TRIANGLES,0,3);this.identity=id;return {canvas:this.canvas,identity:id,resolution:[this.canvas.width,this.canvas.height]};}
+pixels(){const g=this.gl,p=new Uint8Array(this.canvas.width*this.canvas.height*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,this.canvas.width,this.canvas.height,g.RGBA,g.UNSIGNED_BYTE,p);return p;}
+dispose(){const g=this.gl;for(const t of this.targets){g.deleteTexture(t.texture);g.deleteFramebuffer(t.fbo);}for(const p of this.programs)g.deleteProgram(p);g.deleteVertexArray(this.vao);}
+}
+P.Renderer=Renderer;
+})(globalThis.Petals);

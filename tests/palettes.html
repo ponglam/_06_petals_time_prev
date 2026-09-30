@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>PETALS palette validation</title><style>body{background:#eae7df;color:#252c29;font:16px Georgia;margin:30px}section{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:32px}figure{margin:0}img{width:100%;display:block}figcaption{margin:8px 0}pre{white-space:pre-wrap}.colors{display:flex;gap:5px}.colors i{display:block;width:20px;height:20px}</style><h1>Three takes · fifteen moments</h1><pre id="result">Running…</pre><main id="gallery"></main><script src="../src/core/model.js"></script><script src="../src/render/shaders.js"></script><script src="../src/render/renderer.js"></script><script>
+try {
+ const P=Petals,canvas=document.createElement('canvas'),renderer=new P.Renderer(canvas,{width:225,height:300}),ages=[1,3651,7301,10951,14601],labels=['−20 years','−10 years','Now','+10 years','+20 years'];
+ const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+ const log=[];
+ for(const take of P.originTakes('1990-08-23','14:37')){
+  const title=document.createElement('h2');title.textContent=take.name;const row=document.createElement('section');document.getElementById('gallery').append(title,row);const pixels=[];
+  ages.forEach((ageDays,i)=>{renderer.render({seed:take.seed,ageDays});pixels.push(renderer.pixels());const figure=document.createElement('figure'),img=new Image(),caption=document.createElement('figcaption'),swatches=document.createElement('div');img.src=canvas.toDataURL();caption.textContent=labels[i];swatches.className='colors';P.colorState(take.seed,ageDays).pigments.forEach(c=>{const swatch=document.createElement('i');swatch.style.background=P.colorCSS(c);swatches.append(swatch);});figure.append(img,caption,swatches);row.append(figure);});
+  for(const i of [4,0,3,1,2]){renderer.render({seed:take.seed,ageDays:ages[i]});if(!equal(pixels[i],renderer.pixels()))throw Error('Replay mismatch '+take.name+' '+i);}
+  for(let i=1;i<5;i++){if(equal(pixels[i],pixels[i-1]))throw Error('Repeated image');let groundDifference=0;for(let k=0;k<20*4;k++)groundDifference+=Math.abs(pixels[i][k]-pixels[i-1][k]);if(!groundDifference)throw Error('Background did not change');}
+  log.push('PASS: '+take.name+' — five distinct images, changing ground, exact replay.');
+ }
+ if(renderer.gl.getError()!==renderer.gl.NO_ERROR)throw Error('GPU error');renderer.dispose();document.getElementById('result').textContent=log.join('\n');document.title='PASS — PETALS palettes';
+}catch(e){document.getElementById('result').textContent=e.stack;document.title='FAIL — PETALS palettes';}
+</script>

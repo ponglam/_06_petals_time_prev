@@ -1,0 +1,9 @@
+{
+  "name": "petals-time",
+  "version": "0.8.0",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8787 --bind 127.0.0.1",
+    "test": "node --test tests/core.test.cjs"
+  }
+}
